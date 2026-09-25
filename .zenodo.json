@@ -1,0 +1,25 @@
+{
+  "creators": [
+    {
+      "name": "Perla, Emir",
+      "affiliation": "we-do-care-global",
+      "orcid": "0009-0009-8515-2727"
+    }
+  ],
+  "description": "Pharma Intelligence OS: A Vite+React+TypeScript dashboard for pharmaceutical data intelligence and analytics.",
+  "keywords": [
+    "pharmaceutical",
+    "intelligence",
+    "dashboard",
+    "react",
+    "vite",
+    "typescript"
+  ],
+  "license": "Apache-2.0",
+  "publication_date": "2026-09-25",
+  "related_identifiers": [],
+  "title": "Pharma Intelligence OS",
+  "version": "0.0.1",
+  "access_right": "open",
+  "upload_type": "software"
+}
