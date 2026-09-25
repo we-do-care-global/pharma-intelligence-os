@@ -1,0 +1,27 @@
+name: Zenodo publishing
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+jobs:
+  zenodo:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install zenodo_get
+      - name: Publish to Zenodo
+        env:
+          ZENODO_SANDBOX: false
+        run: |
+          zenodo_get .zenodo.json --upload
