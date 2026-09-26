@@ -1,27 +1,79 @@
 name: Zenodo publishing
+
+# Archives every published GitHub release to Zenodo. Zenodo mints a DataCite DOI
+# per version, and because the author ORCID sits in `creators` in .zenodo.json,
+# DataCite pushes the new work to the ORCID record automatically (once ORCID
+# auto-update is authorised for DataCite in the ORCID account).
+#
+# Requires a repository secret: ZENODO_TOKEN (Zenodo personal access token with
+# deposit:write and deposit:actions scopes). Never commit the token or the OAuth
+# client secret — they live only in GitHub Actions secrets.
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to deposit (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
 jobs:
   zenodo:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install zenodo_get
+
+      - name: Verify required secret is present
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          if [ -z "$ZENODO_TOKEN" ]; then
+            echo "::error::ZENODO_TOKEN is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
       - name: Publish to Zenodo
         env:
-          ZENODO_SANDBOX: false
+          ZENODO_SANDBOX: "false"
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
         run: |
+          # zenodo_get reads .zenodo.json, uploads the repo, publishes the
+          # deposition and prints the minted DOI. version/publication_date come
+          # from that file, so keep them in step with the release tag.
           zenodo_get .zenodo.json --upload
+
+      - name: Record the minted DOI on the release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          doi=$(gh run view "$GITHUB_RUN_ID" --log 2>/dev/null \
+                | grep -oE '10\.5281/zenodo\.[0-9]+' | tail -1 || true)
+          if [ -n "$doi" ]; then
+            gh release view "$TAG" --repo "$REPO" --json body --jq .body \
+              | grep -q "$doi" || gh release edit "$TAG" --repo "$REPO" \
+                   --notes "Archived on Zenodo: https://doi.org/$doi"
+            echo "DOI $doi written to release $TAG"
+          else
+            echo "No DOI found in logs; skipping release note update"
+          fi

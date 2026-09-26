@@ -2,12 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
+    name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,12 +22,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
 
-      - run: npm ci
+      # `npm ci` requires package-lock.json to be committed — that missing lock
+      # file is what failed every earlier run on this repo.
+      - name: Install (lockfile must be committed)
+        run: npm ci
 
-      - run: npm run lint
+      - name: Lint
+        run: npm run lint
 
-      - run: npm test -- --run
+      - name: Typecheck
+        run: npm run typecheck
 
-      - run: npm run build
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7

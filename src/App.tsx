@@ -1,714 +1,734 @@
 import { useEffect, useRef, useState } from 'react';
-\nimport {
-\n    Activity,
-\n    AlertTriangle,
-\n    ArrowUpRight,
-\n    Brain,
-\n    CheckCircle2,
-\n    ClipboardCheck,
-\n    Database,
-\n    FileCheck2,
-\n    FileText,
-\n    Globe2,
-\n    HandHeart,
-\n    History,
-\n    Heart,
-\n    Pill,
-\n    RefreshCw,
-\n    Send,
-\n    ShieldCheck,
-\n    Sparkles,
-\n    Stethoscope,
-\n    Zap,
-\n} from 'lucide-react';
-\nimport { api, ws } from '@appdeploy/client';
-\n
-\ntype CaseRecord = {
-\n    id: string;
-\n    drug: string;
-\n    reaction: string;
-\n    seriousness: string;
-\n    status: string;
-\n    aiConfidence: number;
-\n    humanVerified: boolean;
-\n};
-\n
-\ntype Signal = {
-\n    id?: string;
-\n    title: string;
-\n    severity: string;
-\n    source: string;
-\n    country: string;
-\n    impact: string;
-\n    prr: number;
-\n    ror: number;
-\n    trend: string;
-\n    created_at: number;
-\n};
-\n
-\ntype Audit = {
-\n    id?: string;
-\n    actor: string;
-\n    action: string;
-\n    entity: string;
-\n    timestamp: number;
-\n    hash: string;
-\n};
-\n
-\ntype Source = {
-\n    id: string;
-\n    name: string;
-\n    region: string;
-\n    status: string;
-\n    message: string;
-\n    url: string;
-\n    lastChecked?: number;
-\n};
-\n
-\nconst sourceSeed: Source[] = [
-\n    {
-\n        id: 'eudravigilance',
-\n        name: 'EMA EudraVigilance',
-\n        region: 'EEA',
-\n        status: 'READY-GATED',
-\n        message: 'E2B(R3) workflow ready; production gateway requires EMA registration/credentials',
-\n        url: 'https://www.ema.europa.eu/en/human-regulatory-overview/research-development/pharmacovigilance-research-development/eudravigilance',
-\n    },
-\n    {
-\n        id: 'cima',
-\n        name: 'AEMPS CIMA',
-\n        region: 'Spain',
-\n        status: 'LIVE',
-\n        message: 'Official medicine/supply source monitored',
-\n        url: 'https://cima.aemps.es/cima/',
-\n    },
-\n    {
-\n        id: 'bifimed',
-\n        name: 'BIFIMED',
-\n        region: 'Spain',
-\n        status: 'LIVE',
-\n        message: 'Financing and nomenclator intelligence monitored',
-\n        url: 'https://www.sanidad.gob.es/areas/farmacia/',
-\n    },
-\n];
-\n
-\nconst defaultCases: CaseRecord[] = [
-\n    {
-\n        id: 'ICSR-00041',
-\n        drug: 'trastuzumab',
-\n        reaction: 'cardiac dysfunction',
-\n        seriousness: 'Serious',
-\n        status: 'AI REVIEW',
-\n        aiConfidence: 96,
-\n        humanVerified: false,
-\n    },
-\n    {
-\n        id: 'ICSR-00042',
-\n        drug: 'adalimumab',
-\n        reaction: 'anaphylactic reaction',
-\n        seriousness: 'Serious',
-\n        status: 'HUMAN VERIFIED',
-\n        aiConfidence: 94,
-\n        humanVerified: true,
-\n    },
-\n    {
-\n        id: 'ICSR-00043',
-\n        drug: 'semaglutide',
-\n        reaction: 'pancreatitis',
-\n        seriousness: 'Serious',
-\n        status: 'DRAFT',
-\n        aiConfidence: 89,
-\n        humanVerified: false,
-\n    },
-\n];
-\n
-\nfunction App() {
-\n    const [tab, setTab] = useState('Overview');
-\n    const [sources, setSources] = useState<Source[]>(sourceSeed);
-\n    const [cases, setCases] = useState<CaseRecord[]>(defaultCases);
-\n    const [signals, setSignals] = useState<Signal[]>([]);
-\n    const [audits, setAudits] = useState<Audit[]>([]);
-\n    const [notice, setNotice] = useState('');
-\nconst [approvals, setApprovals] = useState<Array<any>>([]);
-\nconst [approvalsLoading, setApprovalsLoading] = useState<boolean>(true);
-\nconst [approvalsError, setApprovalsError] = useState<string | null>(null);
-\n    const [busy, setBusy] = useState(false);
-\n    const conn = useRef<ReturnType<typeof ws.connect> | null>(null);
-\n
-\n    const load = async () => {
-\n        try {
-\n            const r = await api.get('/api/dashboard');
-\n            const d = r.data as {
-\n                sources?: Source[];
-\n                cases?: CaseRecord[];
-\n                signals?: Signal[];
-\n                audits?: Audit[];
-\n            };
-\n            if (d.sources?.length) setSources(d.sources);
-\n            if (d.cases?.length) setCases(d.cases);
-\n            if (d.signals) setSignals(d.signals);
-\n            if (d.audits) setAudits(d.audits);
-\n        } catch {
-\n            setNotice('Dashboard is using safe local defaults while the backend reconnects.');
-\n        }
-\n    };
-\n
-\n    useEffect(() => {
-\n        load();
-\n        const c = ws.connect();
-\n        conn.current = c;
-\n        c.onMessage((message) => {
-\n            if (
-\n                message?.type === 'entity.update' &&
-\n                message.payload?.entity_type === 'pharma-dashboard'
-\n            ) {
-\n                const d = message.payload.data as {
-\n                    sources?: Source[];
-\n                    cases?: CaseRecord[];
-\n                    signals?: Signal[];
-\n                    audits?: Audit[];
-\n                };
-\n                if (d.sources) setSources(d.sources);
-\n                if (d.cases) setCases(d.cases);
-\n                if (d.signals) setSignals(d.signals);
-\n                if (d.audits) setAudits(d.audits);
-\n            }
-\n        });
-\n        c.ready.then(() => {
-\n            if (c.connectionId) {
-\n                api.post('/api/subscriptions', {
-\n                    entity_type: 'pharma-dashboard',
-\n                    entity_id: 'global',
-\n                    connection_id: c.connectionId,
-\n                });
-\n            }
-\n        });
-\n        return () => {
-\n            if (c.connectionId) {
-\n                api.post('/api/subscriptions/remove', {
-\n                    entity_type: 'pharma-dashboard',
-\n                    entity_id: 'global',
-\n                    connection_id: c.connectionId,
-\n                });
-\n            }
-\n            c.disconnect();
-\n        };
-\n    }, []);
-\n
-\n    const refresh = async () => {
-\n        setBusy(true);
-\n        setNotice('Refreshing official-source control plane…');
-\n        try {
-\n            const r = await api.post('/api/refresh', {});
-\n            const d = r.data;
-\n            setSources(d.sources || sources);
-\n            setSignals(d.signals || []);
-\n            setAudits(d.audits || []);
-\n            setNotice('Source checks completed and audit evidence updated.');
-\n        } catch {
-\n            setNotice('Refresh failed safely; no regulatory status was fabricated.');
-\n        } finally {
-\n            setBusy(false);
-\n        }
-\n    };
-\n
-\n    const runSignal = async () => {
-\n        setBusy(true);
-\n        setNotice('Calculating disproportionality on the demonstration dataset…');
-\n        try {
-\n            const r = await api.post('/api/signals/analyze', {});
-\n            setSignals(r.data.signals || []);
-\n            setAudits(r.data.audits || []);
-\n            setTab('Signals');
-\n            setNotice('Signal analysis completed with PRR/ROR and trend indicators.');
-\n        } catch {
-\n            setNotice('Signal analysis failed; no signal was promoted automatically.');
-\n        } finally {
-\n            setBusy(false);
-\n        }
-\n    };
-\n
-\n    const generateReport = async () => {
-\n        setBusy(true);
-\n        setNotice('Building PSUR/PBRER working draft from verified records…');
-\n        try {
-\n            const r = await api.post('/api/reports/psur', {});
-\n            setAudits(r.data.audits || []);
-\n            setTab('Reports');
-\n            setNotice('PSUR/PBRER draft generated for human regulatory review.');
-\n        } catch {
-\n            setNotice('Report generation failed safely.');
-\n        } finally {
-\n            setBusy(false);
-\n        }
-\n    };
-\n
-\n    const verifyCase = async (id: string) => {
-\n        try {
-\n            const r = await api.post('/api/cases/verify', { id });
-\n            setCases(r.data.cases || cases);
-\n            setAudits(r.data.audits || audits);
-\n            setNotice(`Human verification recorded for ${id}.`);
-\n        } catch {
-\n            setNotice('Verification could not be recorded.');
-\n        }
-\n    };
-\n
-\n    const e2b = async () => {
-\n        setBusy(true);
-\n        setNotice('Generating ISO/ICH E2B(R3) XML validation package…');
-\n        try {
-\n            const r = await api.post('/api/icsr/e2b-r3', { caseId: cases[0]?.id });
-\n            setAudits(r.data.audits || audits);
-\n            setNotice(
-\n                `E2B(R3) package ${r.data.packageId} generated. Production transmission remains registration-gated.`,
-\n            );
-\n            setTab('ICSR / E2B');
-\n        } catch {
-\n            setNotice('E2B(R3) package generation failed validation.');
-\n        } finally {
-\n            setBusy(false);
-\n        }
-\n    };
-\n
-\n    const nav = [
-\n        ['Overview', Activity],
-\n        ['ICSR / E2B', FileCheck2],
-\n        ['Signals', AlertTriangle],
-\n        ['Reports', FileText],
-\n        ['AI Governance', Brain],
-\n        ['Sources', Globe2],
-\n        ['Audit Trail', History],
-\n    ] as const;
-\n
-\n    const scrollTo = (id: string) => {
-\n        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-\n    };
-\n
-\n    const openWorkspace = (nextTab = 'Overview') => {
-\n        setTab(nextTab);
-\n        window.setTimeout(() => scrollTo('workspace'), 40);
-\n    };
-\n
-\n    const verifiedCount = cases.filter((item) => item.humanVerified).length;
-\n    const liveSources = sources.filter((item) => item.status === 'LIVE').length;
-\n
-\n    return (
-\n        <div className='site'>
-\n            <header className='site-header'>
-\n                <div className='logo-ring' aria-label='We Do Care Global'>
-\n                    <Globe2 size={27} strokeWidth={1.7} />
-\n                    <HandHeart size={15} strokeWidth={1.8} className='logo-heart' />
-\n                </div>
-\n                <div className='header-row'>
-\n                    <div className='wordmark'>
-\n                        <b>WE DO CARE GLOBAL</b>
-\n                        <span>PHARMACOVIGILANCE · REGULATORY INTELLIGENCE · AI GOVERNANCE</span>
-\n                    </div>
-\n                    <nav className='public-nav' aria-label='Primary'>
-\n                        <a href='https://github.com/we-do-care-global' target='_blank' rel='noreferrer'>
-\n                            Published <ArrowUpRight size={13} />
-\n                        </a>
-\n                        <button onClick={() => scrollTo('about')}>About</button>
-\n                        <button onClick={() => scrollTo('contact')}>Contact</button>
-\n                    </nav>
-\n                </div>
-\n            </header>
-\n
-\n            <main>
-\n                <section className='hero reveal'>
-\n                    <div className='hero-copy'>
-\n                        <div className='eyebrow'>
-\n                            <span className='pulse' />
-\n                            WE DO CARE GLOBAL
-\n                        </div>
-\n                        <h1>
-\n                            We Do Care Global
-\n                            <span>Pharmacovigilance &amp; Regulatory Intelligence OS</span>
-\n                        </h1>
-\n                        <p className='hero-lede'>
-\n                            A governed operational workspace connecting safety data, regulatory evidence,
-\n                            retrieval intelligence and human-controlled AI decisions.
-\n                        </p>
-\n                        <div className='hero-meta'>
-\n                            <span><strong>Human verified</strong> · Auditable · EU-ready</span>
-\n                            <span>Global safety intelligence layer</span>
-\n                            <span>ORCID 0009-0009-8515-2727</span>
-\n                        </div>
-\n                        <div className='hero-actions'>
-\n                            <button className='btn btn-gold' onClick={() => openWorkspace('Overview')}>
-\n                                Explore Platform <ArrowUpRight size={15} />
-\n                            </button>
-\n                            <button className='btn btn-ghost' onClick={() => scrollTo('about')}>
-\n                                About the architecture
-\n                            </button>
-\n                        </div>
-\n                    </div>
-\n
-\n                    <div className='hero-orbit' aria-label='Platform status'>
-\n                        <div className='orbit-core'>
-\n                            <ShieldCheck size={30} />
-\n                            <b>TRUST</b>
-\n                            <span>BY DESIGN</span>
-\n                        </div>
-\n                        <div className='orbit-node node-gold'>ICSR</div>
-\n                        <div className='orbit-node node-cyan'>E2B(R3)</div>
-\n                        <div className='orbit-node node-purple'>AI</div>
-\n                        <div className='orbit-node node-red'>RISK</div>
-\n                    </div>
-\n                </section>
-\n
-\n                <section className='banner reveal' id='contact'>
-\n                    <div>
-\n                        <span className='banner-kicker'>ONE GOVERNED WORKSPACE</span>
-\n                        <h2>
-\n                            From safety data to governed action — one operational workspace for ICSR
-\n                            intake, E2B(R3), signal detection, PSUR/PBRER, and human-controlled AI decisions.
-\n                        </h2>
-\n                    </div>
-\n                    <button className='banner-cta' onClick={() => openWorkspace('ICSR / E2B')}>
-\n                        Request Demo <ArrowUpRight size={16} />
-\n                    </button>
-\n                </section>
-\n
-\n                <section className='section reveal' id='features'>
-\n                    <div className='section-intro'>
-\n                        <span className='section-kicker'>FEATURES</span>
-\n                        <h2>Safety operations, wrapped in governance.</h2>
-\n                        <p>
-\n                            Designed for teams that need traceable decisions, regulator-aware workflows and
-\n                            useful AI without removing human accountability.
-\n                        </p>
-\n                    </div>
-\n
-\n                    <div className='feature-grid'>
-\n                        <FeatureCard
-\n                            icon={<FileCheck2 />}
-\n                            tone='gold'
-\n                            title='Regulatory Control Plane'
-\n                            text='E2B(R3) XML generation + validation workflow with a hard human approval gate before production submission.'
-\n                            onLearn={() => openWorkspace('ICSR / E2B')}
-\n                        />
-\n                        <FeatureCard
-\n                            icon={<AlertTriangle />}
-\n                            tone='cyan'
-\n                            title='Signal Management'
-\n                            text='Reviewable signal analytics with PRR, ROR and trend indicators, plus a PSUR/PBRER working-draft engine.'
-\n                            onLearn={() => openWorkspace('Signals')}
-\n                        />
-\n                        <FeatureCard
-\n                            icon={<Brain />}
-\n                            tone='purple'
-\n                            title='AI Governance'
-\n                            text='Machine-first analysis, provenance, append-only audit evidence and human-in-the-loop decisions.'
-\n                            onLearn={() => openWorkspace('AI Governance')}
-\n                        />
-\n                        <FeatureCard
-\n                            icon={<ShieldCheck />}
-\n                            tone='red'
-\n                            title='Compliance & Residency'
-\n                            text='EU governance evidence, source provenance and residency controls without pretending to self-certify legal compliance.'
-\n                            onLearn={() => openWorkspace('Sources')}
-\n                        />
-\n                    </div>
-\n                </section>
-\n
-\n                <section className='stats-section reveal'>
-\n                    <div className='stat'>
-\n                        <b>{cases.length}</b>
-\n                        <span>ICSR cases in workspace</span>
-\n                    </div>
-\n                    <div className='stat'>
-\n                        <b>{signals.length}</b>
-\n                        <span>signals calculated</span>
-\n                    </div>
-\n                    <div className='stat'>
-\n                        <b>{verifiedCount}/{cases.length || 0}</b>
-\n                        <span>human verified cases</span>
-\n                    </div>
-\n                    <div className='stat stat-wide'>
-\n                        <b>EU</b>
-\n                        <span>governance + residency mode</span>
-\n                    </div>
-\n                </section>
-\n
-\n                <section className='about section reveal' id='about'>
-\n                    <div className='section-intro'>
-\n                        <span className='section-kicker'>WE DO CARE PLATFORM FABRIC</span>
-\n                        <h2>One brand. Four complementary control layers.</h2>
-\n                        <p>
-\n                            The product surface stays focused on pharmacovigilance while the wider We Do Care
-\n                            ecosystem provides retrieval, evaluation and agent-governance foundations.
-\n                        </p>
-\n                    </div>
-\n
-\n                    <div className='fabric-grid'>
-\n                        <div className='fabric-item'>
-\n                            <span className='fabric-dot gold' />
-\n                            <div>
-\n                                <b>Pharmacovigilance OS</b>
-\n                                <p>ICSR, E2B(R3), signal management, PSUR/PBRER and regulatory source control.</p>
-\n                            </div>
-\n                        </div>
-\n                        <div className='fabric-item'>
-\n                            <span className='fabric-dot cyan' />
-\n                            <div>
-\n                                <b>Enterprise Hybrid RAG</b>
-\n                                <p>Retrieval fabric for grounded answers across multimodal enterprise knowledge.</p>
-\n                            </div>
-\n                            <a href='https://we-do-care-global.github.io/enterprise-hybrid-rag/' target='_blank' rel='noreferrer'>Explore →</a>
-\n                        </div>
-\n                        <div className='fabric-item'>
-\n                            <span className='fabric-dot purple' />
-\n                            <div>
-\n                                <b>Agent Eval</b>
-\n                                <p>Evaluation and observability for agent performance, tools, RAG quality and workflows.</p>
-\n                            </div>
-\n                            <a href='https://we-do-care-global.github.io/agent-eval/#quickstart' target='_blank' rel='noreferrer'>Explore →</a>
-\n                        </div>
-\n                        <div className='fabric-item'>
-\n                            <span className='fabric-dot red' />
-\n                            <div>
-\n                                <b>AgentGuard</b>
-\n                                <p>Policy, approval, audit and kill-switch controls for autonomous AI actions.</p>
-\n                            </div>
-\n                            <a href='https://we-do-care-global.github.io/agentguard/' target='_blank' rel='noreferrer'>Explore →</a>
-\n                        </div>
-\n                    </div>
-\n                </section>
-\n
-\n                <section className='workspace-wrap reveal' id='workspace'>
-\n                    <div className='workspace-top'>
-\n                        <div>
-\n                            <span className='section-kicker'>LIVE WORKSPACE</span>
-\n                            <h2>Operational console</h2>
-\n                            <p>Public-facing surface above. Decision-ready execution below.</p>
-\n                        </div>
-\n                        <div className='workspace-actions'>
-\n                            <span className='mini-status'><span className='pulse' /> {liveSources}/3 official sources live</span>
-\n                            <button className='btn btn-ghost btn-small' onClick={refresh} disabled={busy}>
-\n                                <RefreshCw size={14} className={busy ? 'spin' : ''} /> Refresh
-\n                            </button>
-\n                        </div>
-\n                    </div>
-\n
-\n                    <div className='workspace-nav'>
-\n                        {nav.map(([name, Icon]) => (
-\n                            <button key={name} onClick={() => setTab(name)} className={tab === name ? 'active' : ''}>
-\n                                <Icon size={15} />
-\n                                <span>{name}</span>
-\n                            </button>
-\n                        ))}
-\n                    </div>
-\n
-\n                    {notice && (
-\n                        <div className='notice'>
-\n                            <Sparkles size={15} />
-\n                            {notice}
-\n                        </div>
-\n                    )}
-\n
-\n                    {tab === 'Overview' && (
-\n                        <div className='workspace-panel'>
-\n                            <div className='panel-grid'>
-\n                                <Panel title='Machine-first, human-verified' kicker='CONTROL'>
-\n                                    <p>
-\n                                        AI extracts clinical elements, dates, seriousness and
-\n                                        dechallenge/rechallenge candidates. A pharmacovigilance professional
-\n                                        makes the final decision.
-\n                                    </p>
-\n                                    <div className='flow'>
-\n                                        <span>Narrative</span><b>→</b><span>AI extraction</span><b>→</b>
-\n                                        <span>PV review</span><b>→</b><span>Regulatory action</span>
-\n                                    </div>
-\n                                </Panel>
-\n                                <Panel title='Regulatory readiness' kicker='READINESS'>
-\n                                    <Readiness label='E2B(R3) XML workflow' state='READY' />
-\n                                    <Readiness label='EMA production gateway' state='GATED' />
-\n                                    <Readiness label='Signal management' state='READY' />
-\n                                    <Readiness label='PSUR/PBRER draft engine' state='READY' />
-\n                                    <Readiness label='AI governance evidence' state='READY' />
-\n                                </Panel>
-\n                            </div>
-\n                        </div>
-\n                    )}
-\n
-\n                    {tab === 'ICSR / E2B' && (
-\n                        <WorkspaceView
-\n                            title='ICSR & E2B(R3)'
-\n                            subtitle='Structured case processing with a hard human approval gate.'
-\n                            action={
-\n                                <button className='btn btn-gold btn-small' onClick={e2b} disabled={busy}>
-\n                                    <Send size={14} /> Generate E2B(R3)
-\n                                </button>
-\n                            }
-\n                        >
-\n                            <div className='case-list'>
-\n                                {cases.map((item) => (
-\n                                    <div className='case-row' key={item.id}>
-\n                                        <div>
-\n                                            <b>{item.id}</b>
-\n                                            <span>{item.drug} · {item.reaction} · {item.seriousness}</span>
-\n                                        </div>
-\n                                        <div className='case-ai'><Brain size={13} /> {item.aiConfidence}% AI confidence</div>
-\n                                        <div className={item.humanVerified ? 'verified' : 'pending'}>
-\n                                            {item.humanVerified ? 'HUMAN VERIFIED' : 'AWAITING HUMAN'}
-\n                                        </div>
-\n                                        {!item.humanVerified && (
-\n                                            <button className='micro-btn' onClick={() => verifyCase(item.id)}>
-\n                                                <CheckCircle2 size={12} /> Verify
-\n                                            </button>
-\n                                        )}
-\n                                    </div>
-\n                                ))}
-\n                            </div>
-\n                            <div className='xml-card'>
-\n                                <FileCheck2 />
-\n                                <div>
-\n                                    <b>ISO/ICH E2B(R3) validation package</b>
-\n                                    <p>
-\n                                        Generates a standards-oriented XML package and validation report. Production
-\n                                        transmission stays registration-gated.
-\n                                    </p>
-\n                                </div>
-\n                            </div>
-\n                        </WorkspaceView>
-\n                    )}
-\n
-\n                    {tab === 'Signals' && (
-\n                        <WorkspaceView
-\n                            title='Signal management'
-\n                            subtitle='Disproportionality analytics with reviewable evidence.'
-\n                            action={
-\n                                <button className='btn btn-gold btn-small' onClick={runSignal} disabled={busy}>
-\n                                    <Zap size={14} /> Recalculate
-\n                                </button>
-\n                            }
-\n                        >
-\n                            <div className='signal-grid'>
-\n                                {(signals.length
-\n                                    ? signals
-\n                                    : [{
-\n                                        title: 'Cardiac dysfunction / trastuzumab',
-\n                                        severity: 'HIGH',
-\n                                        source: 'ICSR workspace',
-\n                                        country: 'EU',
-\n                                        impact: 'Review for potential signal',
-\n                                        prr: 4.21,
-\n                                        ror: 4.08,
-\n                                        trend: 'RISING',
-\n                                        created_at: Date.now(),
-\n                                    }]).map((item, index) => (
-\n                                        <div className='signal' key={item.id || index}>
-\n                                            <div className='signal-top'>
-\n                                                <span className={'sev ' + item.severity.toLowerCase()}>{item.severity}</span>
-\n                                                <b>{item.title}</b>
-\n                                            </div>
-\n                                            <div className='signal-stats'>
-\n                                                <span>PRR <strong>{item.prr.toFixed(2)}</strong></span>
-\n                                                <span>ROR <strong>{item.ror.toFixed(2)}</strong></span>
-\n                                                <span>TREND <strong>{item.trend}</strong></span>
-\n                                            </div>
-\n                                            <small>{item.country} · {item.source} · {item.impact}</small>
-\n                                        </div>
-\n                                    ))}
-\n                            </div>
-\n                        </WorkspaceView>
-\n                    )}
-\n
-\n                    {tab === 'Reports' && (
-\n                        <WorkspaceView
-\n                            title='PSUR / PBRER workspace'
-\n                            subtitle='Generate a structured working draft, then route it through regulatory review.'
-\n                            action={
-\n                                <button className='btn btn-gold btn-small' onClick={generateReport} disabled={busy}>
-\n                                    <FileText size={14} /> Generate draft
-\n                                </button>
-\n                            }
-\n                        >
-\n                            <div className='report-grid'>
-\n                                <Report title='PSUR' desc='Periodic safety update structure with benefit-risk narrative, signal overview and ICSR evidence.' />
-\n                                <Report title='PBRER' desc='Benefit-risk evaluation structure with cumulative safety data and action tracking.' />
-\n                            </div>
-\n                            <div className='review-banner'>
-\n                                <ClipboardCheck />
-\n                                <div>
-\n                                    <b>Human sign-off required</b>
-\n                                    <p>Generated text is a working draft, not a submitted regulatory report.</p>
-\n                                </div>
-\n                            </div>
-\n                        </WorkspaceView>
-\n                    )}
-\n
-\n                    {tab === 'AI Governance' && (
-\n                        <WorkspaceView title='Trustworthy AI control room' subtitle='Evidence for human oversight, transparency, validation and accountability.'>
-\n                            <div className='govern-grid'>
-\n                                <Readiness label='Human oversight' state='ENABLED' />
-\n                                <Readiness label='Model output provenance' state='TRACKED' />
-\n                                <Readiness label='Decision audit trail' state='APPEND-ONLY' />
-\n                                <Readiness label='Risk & limitation disclosure' state='ACTIVE' />
-\n                                <Readiness label='EU AI Act evidence pack' state='WORKSPACE' />
-\n                                <Readiness label='Data residency policy' state='EU REGION' />
-\n                            </div>
-\n                            <p className='muted'>
-\n                                The system supports governance evidence. It does not self-certify legal compliance
-\n                                or replace qualified regulatory, privacy or AI compliance assessment.
-\n                            </p>
-\n                        </WorkspaceView>
-\n                    )}
-\n
-\n                    {tab === 'Sources' && (
-\n                        <WorkspaceView
-\n                            title='Official source control plane'
-\n                            subtitle='Source-backed status, not decorative “LIVE” labels.'
-\n                            action={
-\n                                <button className='btn btn-ghost btn-small' onClick={refresh} disabled={busy}>
-\n                                    <RefreshCw size={14} /> Refresh
-\n                                </button>
-\n                            }
-\n                        >
-\n                            <div className='source-list'>
-\n                                {sources.map((item) => (
-\n                                    <div className='source' key={item.id}>
-\n                                        <div>
-\n                                            <b>{item.name}</b>
-\n                                            <span>{item.region} · {item.message}</span>
-\n                                        </div>
-\n                                        <div className={'source-status ' + item.status.toLowerCase()}>{item.status}</div>
-\n                                        <a href={item.url} target='_blank' rel='noreferrer'>Official source</a>
-\n                                    </div>
-\n                                ))}
-\n                            </div>
-\n                        </WorkspaceView>
-\n                    )}
-\n
-\n                    {tab === 'Audit Trail' && (
-\n                        <WorkspaceView title='Append-only audit trail' subtitle='Every AI, human and regulatory workflow action leaves evidence.'>
-\n                            <div className='audit-list'>
-\n                                {(audits.length
-\n                                    ? audits
-\n                                    : [{
-\n                                        actor: 'system',
-\n                                        action: 'workspace_initialized',
-\n                                        entity: 'pharma-dashboard',
-\n                                        timestamp: Date.now(),
-\n                                        hash: 'demo-evidence',
-\n                                    }]).slice(0, 20).map((item, index) => (
-\n                                    <div className='audit' key={item.id || index}>
-\n                                        <History size={14} />
-\n                                        <div>
-\n                                            <b>{item.action}</b>
-\n                                            <span>{item.actor} · {item.entity}</span>
-\n                                        </div>
-\n                                        <code>{item.hash}</code>
-\n                                    </div>
-\n                                ))}
-\n                            </div>
-\n                        </WorkspaceView>
-\n                    )}
-\n                </section>
-\n
-\n
+import {
+    Activity,
+    AlertTriangle,
+    ArrowUpRight,
+    Brain,
+    CheckCircle2,
+    ClipboardCheck,
+    FileCheck2,
+    FileText,
+    Globe2,
+    HandHeart,
+    History,
+    RefreshCw,
+    Send,
+    ShieldCheck,
+    Sparkles,
+    Zap,
+} from 'lucide-react';
+import { api, ws } from '@appdeploy/client';
+
+type CaseRecord = {
+    id: string;
+    drug: string;
+    reaction: string;
+    seriousness: string;
+    status: string;
+    aiConfidence: number;
+    humanVerified: boolean;
+};
+
+type Signal = {
+    id?: string;
+    title: string;
+    severity: string;
+    source: string;
+    country: string;
+    impact: string;
+    prr: number;
+    ror: number;
+    trend: string;
+    created_at: number;
+};
+
+type Audit = {
+    id?: string;
+    actor: string;
+    action: string;
+    entity: string;
+    timestamp: number;
+    hash: string;
+};
+
+type Approval = { id: string; drug_name: string; approval_date: string; indication: string };
+
+type Source = {
+    id: string;
+    name: string;
+    region: string;
+    status: string;
+    message: string;
+    url: string;
+    lastChecked?: number;
+};
+
+const sourceSeed: Source[] = [
+    {
+        id: 'eudravigilance',
+        name: 'EMA EudraVigilance',
+        region: 'EEA',
+        status: 'READY-GATED',
+        message: 'E2B(R3) workflow ready; production gateway requires EMA registration/credentials',
+        url: 'https://www.ema.europa.eu/en/human-regulatory-overview/research-development/pharmacovigilance-research-development/eudravigilance',
+    },
+    {
+        id: 'cima',
+        name: 'AEMPS CIMA',
+        region: 'Spain',
+        status: 'LIVE',
+        message: 'Official medicine/supply source monitored',
+        url: 'https://cima.aemps.es/cima/',
+    },
+    {
+        id: 'bifimed',
+        name: 'BIFIMED',
+        region: 'Spain',
+        status: 'LIVE',
+        message: 'Financing and nomenclator intelligence monitored',
+        url: 'https://www.sanidad.gob.es/areas/farmacia/',
+    },
+];
+
+const defaultCases: CaseRecord[] = [
+    {
+        id: 'ICSR-00041',
+        drug: 'trastuzumab',
+        reaction: 'cardiac dysfunction',
+        seriousness: 'Serious',
+        status: 'AI REVIEW',
+        aiConfidence: 96,
+        humanVerified: false,
+    },
+    {
+        id: 'ICSR-00042',
+        drug: 'adalimumab',
+        reaction: 'anaphylactic reaction',
+        seriousness: 'Serious',
+        status: 'HUMAN VERIFIED',
+        aiConfidence: 94,
+        humanVerified: true,
+    },
+    {
+        id: 'ICSR-00043',
+        drug: 'semaglutide',
+        reaction: 'pancreatitis',
+        seriousness: 'Serious',
+        status: 'DRAFT',
+        aiConfidence: 89,
+        humanVerified: false,
+    },
+];
+
+function App() {
+    const [tab, setTab] = useState('Overview');
+    const [sources, setSources] = useState<Source[]>(sourceSeed);
+    const [cases, setCases] = useState<CaseRecord[]>(defaultCases);
+    const [signals, setSignals] = useState<Signal[]>([]);
+    const [audits, setAudits] = useState<Audit[]>([]);
+    const [notice, setNotice] = useState('');
+const [approvals, setApprovals] = useState<Approval[]>([]);
+const [approvalsLoading, setApprovalsLoading] = useState<boolean>(true);
+const [approvalsError, setApprovalsError] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const conn = useRef<ReturnType<typeof ws.connect> | null>(null);
+
+    const load = async () => {
+        try {
+            const r = await api.get('/api/dashboard');
+            const d = r.data as {
+                sources?: Source[];
+                cases?: CaseRecord[];
+                signals?: Signal[];
+                audits?: Audit[];
+            };
+            if (d.sources?.length) setSources(d.sources);
+            if (d.cases?.length) setCases(d.cases);
+            if (d.signals) setSignals(d.signals);
+            if (d.audits) setAudits(d.audits);
+        } catch {
+            setNotice('Dashboard is using safe local defaults while the backend reconnects.');
+        }
+    };
+
+    useEffect(() => {
+        load();
+        const c = ws.connect();
+        conn.current = c;
+        c.onMessage((message: { type?: string; payload?: { entity_type?: string; data?: unknown } }) => {
+            if (
+                message?.type === 'entity.update' &&
+                message.payload?.entity_type === 'pharma-dashboard'
+            ) {
+                const d = message.payload.data as {
+                    sources?: Source[];
+                    cases?: CaseRecord[];
+                    signals?: Signal[];
+                    audits?: Audit[];
+                };
+                if (d.sources) setSources(d.sources);
+                if (d.cases) setCases(d.cases);
+                if (d.signals) setSignals(d.signals);
+                if (d.audits) setAudits(d.audits);
+            }
+        });
+        c.ready.then(() => {
+            if (c.connectionId) {
+                api.post('/api/subscriptions', {
+                    entity_type: 'pharma-dashboard',
+                    entity_id: 'global',
+                    connection_id: c.connectionId,
+                });
+            }
+        });
+        return () => {
+            if (c.connectionId) {
+                api.post('/api/subscriptions/remove', {
+                    entity_type: 'pharma-dashboard',
+                    entity_id: 'global',
+                    connection_id: c.connectionId,
+                });
+            }
+            c.disconnect();
+        };
+    }, []);
+
+    const loadApprovals = async () => {
+        setApprovalsLoading(true);
+        setApprovalsError(null);
+        try {
+            const r = await api.get<{ approvals?: Approval[]; audits?: Audit[] }>('/api/approvals');
+            setApprovals(r.data.approvals ?? []);
+            if (r.data.audits) setAudits(r.data.audits);
+        } catch {
+            setApprovalsError('openFDA approval feed unavailable. No record was fabricated.');
+        } finally {
+            setApprovalsLoading(false);
+        }
+    };
+
+    // The FDA Approvals tab is premium-tier, so it loads on demand rather than
+    // on mount, and only once the user actually opens it.
+    useEffect(() => {
+        if (tab === 'FDA Approvals' && approvals.length === 0 && !approvalsError) {
+            void loadApprovals();
+        }
+    }, [tab]);
+
+    const refresh = async () => {
+        setBusy(true);
+        setNotice('Refreshing official-source control plane…');
+        try {
+            const r = await api.post('/api/refresh', {});
+            const d = r.data;
+            setSources(d.sources || sources);
+            setSignals(d.signals || []);
+            setAudits(d.audits || []);
+            setNotice('Source checks completed and audit evidence updated.');
+        } catch {
+            setNotice('Refresh failed safely; no regulatory status was fabricated.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const runSignal = async () => {
+        setBusy(true);
+        setNotice('Calculating disproportionality on the demonstration dataset…');
+        try {
+            const r = await api.post('/api/signals/analyze', {});
+            setSignals(r.data.signals || []);
+            setAudits(r.data.audits || []);
+            setTab('Signals');
+            setNotice('Signal analysis completed with PRR/ROR and trend indicators.');
+        } catch {
+            setNotice('Signal analysis failed; no signal was promoted automatically.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const generateReport = async () => {
+        setBusy(true);
+        setNotice('Building PSUR/PBRER working draft from verified records…');
+        try {
+            const r = await api.post('/api/reports/psur', {});
+            setAudits(r.data.audits || []);
+            setTab('Reports');
+            setNotice('PSUR/PBRER draft generated for human regulatory review.');
+        } catch {
+            setNotice('Report generation failed safely.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const verifyCase = async (id: string) => {
+        try {
+            const r = await api.post('/api/cases/verify', { id });
+            setCases(r.data.cases || cases);
+            setAudits(r.data.audits || audits);
+            setNotice(`Human verification recorded for ${id}.`);
+        } catch {
+            setNotice('Verification could not be recorded.');
+        }
+    };
+
+    const e2b = async () => {
+        setBusy(true);
+        setNotice('Generating ISO/ICH E2B(R3) XML validation package…');
+        try {
+            const r = await api.post('/api/icsr/e2b-r3', { caseId: cases[0]?.id });
+            setAudits(r.data.audits || audits);
+            setNotice(
+                `E2B(R3) package ${r.data.packageId} generated. Production transmission remains registration-gated.`,
+            );
+            setTab('ICSR / E2B');
+        } catch {
+            setNotice('E2B(R3) package generation failed validation.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const nav = [
+        ['Overview', Activity],
+        ['ICSR / E2B', FileCheck2],
+        ['Signals', AlertTriangle],
+        ['Reports', FileText],
+        ['AI Governance', Brain],
+        ['Sources', Globe2],
+        ['Audit Trail', History],
+    ] as const;
+
+    const scrollTo = (id: string) => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const openWorkspace = (nextTab = 'Overview') => {
+        setTab(nextTab);
+        window.setTimeout(() => scrollTo('workspace'), 40);
+    };
+
+    const verifiedCount = cases.filter((item) => item.humanVerified).length;
+    const liveSources = sources.filter((item) => item.status === 'LIVE').length;
+
+    return (
+        <div className='site'>
+            <header className='site-header'>
+                <div className='logo-ring' aria-label='We Do Care Global'>
+                    <Globe2 size={27} strokeWidth={1.7} />
+                    <HandHeart size={15} strokeWidth={1.8} className='logo-heart' />
+                </div>
+                <div className='header-row'>
+                    <div className='wordmark'>
+                        <b>WE DO CARE GLOBAL</b>
+                        <span>PHARMACOVIGILANCE · REGULATORY INTELLIGENCE · AI GOVERNANCE</span>
+                    </div>
+                    <nav className='public-nav' aria-label='Primary'>
+                        <a href='https://github.com/we-do-care-global' target='_blank' rel='noreferrer'>
+                            Published <ArrowUpRight size={13} />
+                        </a>
+                        <button onClick={() => scrollTo('about')}>About</button>
+                        <button onClick={() => scrollTo('contact')}>Contact</button>
+                    </nav>
+                </div>
+            </header>
+
+            <main>
+                <section className='hero reveal'>
+                    <div className='hero-copy'>
+                        <div className='eyebrow'>
+                            <span className='pulse' />
+                            WE DO CARE GLOBAL
+                        </div>
+                        <h1>
+                            We Do Care Global
+                            <span>Pharmacovigilance &amp; Regulatory Intelligence OS</span>
+                        </h1>
+                        <p className='hero-lede'>
+                            A governed operational workspace connecting safety data, regulatory evidence,
+                            retrieval intelligence and human-controlled AI decisions.
+                        </p>
+                        <div className='hero-meta'>
+                            <span><strong>Human verified</strong> · Auditable · EU-ready</span>
+                            <span>Global safety intelligence layer</span>
+                            <span>ORCID 0009-0009-8515-2727</span>
+                        </div>
+                        <div className='hero-actions'>
+                            <button className='btn btn-gold' onClick={() => openWorkspace('Overview')}>
+                                Explore Platform <ArrowUpRight size={15} />
+                            </button>
+                            <button className='btn btn-ghost' onClick={() => scrollTo('about')}>
+                                About the architecture
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className='hero-orbit' aria-label='Platform status'>
+                        <div className='orbit-core'>
+                            <ShieldCheck size={30} />
+                            <b>TRUST</b>
+                            <span>BY DESIGN</span>
+                        </div>
+                        <div className='orbit-node node-gold'>ICSR</div>
+                        <div className='orbit-node node-cyan'>E2B(R3)</div>
+                        <div className='orbit-node node-purple'>AI</div>
+                        <div className='orbit-node node-red'>RISK</div>
+                    </div>
+                </section>
+
+                <section className='banner reveal' id='contact'>
+                    <div>
+                        <span className='banner-kicker'>ONE GOVERNED WORKSPACE</span>
+                        <h2>
+                            From safety data to governed action — one operational workspace for ICSR
+                            intake, E2B(R3), signal detection, PSUR/PBRER, and human-controlled AI decisions.
+                        </h2>
+                    </div>
+                    <button className='banner-cta' onClick={() => openWorkspace('ICSR / E2B')}>
+                        Request Demo <ArrowUpRight size={16} />
+                    </button>
+                </section>
+
+                <section className='section reveal' id='features'>
+                    <div className='section-intro'>
+                        <span className='section-kicker'>FEATURES</span>
+                        <h2>Safety operations, wrapped in governance.</h2>
+                        <p>
+                            Designed for teams that need traceable decisions, regulator-aware workflows and
+                            useful AI without removing human accountability.
+                        </p>
+                    </div>
+
+                    <div className='feature-grid'>
+                        <FeatureCard
+                            icon={<FileCheck2 />}
+                            tone='gold'
+                            title='Regulatory Control Plane'
+                            text='E2B(R3) XML generation + validation workflow with a hard human approval gate before production submission.'
+                            onLearn={() => openWorkspace('ICSR / E2B')}
+                        />
+                        <FeatureCard
+                            icon={<AlertTriangle />}
+                            tone='cyan'
+                            title='Signal Management'
+                            text='Reviewable signal analytics with PRR, ROR and trend indicators, plus a PSUR/PBRER working-draft engine.'
+                            onLearn={() => openWorkspace('Signals')}
+                        />
+                        <FeatureCard
+                            icon={<Brain />}
+                            tone='purple'
+                            title='AI Governance'
+                            text='Machine-first analysis, provenance, append-only audit evidence and human-in-the-loop decisions.'
+                            onLearn={() => openWorkspace('AI Governance')}
+                        />
+                        <FeatureCard
+                            icon={<ShieldCheck />}
+                            tone='red'
+                            title='Compliance & Residency'
+                            text='EU governance evidence, source provenance and residency controls without pretending to self-certify legal compliance.'
+                            onLearn={() => openWorkspace('Sources')}
+                        />
+                    </div>
+                </section>
+
+                <section className='stats-section reveal'>
+                    <div className='stat'>
+                        <b>{cases.length}</b>
+                        <span>ICSR cases in workspace</span>
+                    </div>
+                    <div className='stat'>
+                        <b>{signals.length}</b>
+                        <span>signals calculated</span>
+                    </div>
+                    <div className='stat'>
+                        <b>{verifiedCount}/{cases.length || 0}</b>
+                        <span>human verified cases</span>
+                    </div>
+                    <div className='stat stat-wide'>
+                        <b>EU</b>
+                        <span>governance + residency mode</span>
+                    </div>
+                </section>
+
+                <section className='about section reveal' id='about'>
+                    <div className='section-intro'>
+                        <span className='section-kicker'>WE DO CARE PLATFORM FABRIC</span>
+                        <h2>One brand. Four complementary control layers.</h2>
+                        <p>
+                            The product surface stays focused on pharmacovigilance while the wider We Do Care
+                            ecosystem provides retrieval, evaluation and agent-governance foundations.
+                        </p>
+                    </div>
+
+                    <div className='fabric-grid'>
+                        <div className='fabric-item'>
+                            <span className='fabric-dot gold' />
+                            <div>
+                                <b>Pharmacovigilance OS</b>
+                                <p>ICSR, E2B(R3), signal management, PSUR/PBRER and regulatory source control.</p>
+                            </div>
+                        </div>
+                        <div className='fabric-item'>
+                            <span className='fabric-dot cyan' />
+                            <div>
+                                <b>Enterprise Hybrid RAG</b>
+                                <p>Retrieval fabric for grounded answers across multimodal enterprise knowledge.</p>
+                            </div>
+                            <a href='https://we-do-care-global.github.io/enterprise-hybrid-rag/' target='_blank' rel='noreferrer'>Explore →</a>
+                        </div>
+                        <div className='fabric-item'>
+                            <span className='fabric-dot purple' />
+                            <div>
+                                <b>Agent Eval</b>
+                                <p>Evaluation and observability for agent performance, tools, RAG quality and workflows.</p>
+                            </div>
+                            <a href='https://we-do-care-global.github.io/agent-eval/#quickstart' target='_blank' rel='noreferrer'>Explore →</a>
+                        </div>
+                        <div className='fabric-item'>
+                            <span className='fabric-dot red' />
+                            <div>
+                                <b>AgentGuard</b>
+                                <p>Policy, approval, audit and kill-switch controls for autonomous AI actions.</p>
+                            </div>
+                            <a href='https://we-do-care-global.github.io/agentguard/' target='_blank' rel='noreferrer'>Explore →</a>
+                        </div>
+                    </div>
+                </section>
+
+                <section className='workspace-wrap reveal' id='workspace'>
+                    <div className='workspace-top'>
+                        <div>
+                            <span className='section-kicker'>LIVE WORKSPACE</span>
+                            <h2>Operational console</h2>
+                            <p>Public-facing surface above. Decision-ready execution below.</p>
+                        </div>
+                        <div className='workspace-actions'>
+                            <span className='mini-status'><span className='pulse' /> {liveSources}/3 official sources live</span>
+                            <button className='btn btn-ghost btn-small' onClick={refresh} disabled={busy}>
+                                <RefreshCw size={14} className={busy ? 'spin' : ''} /> Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className='workspace-nav'>
+                        {nav.map(([name, Icon]) => (
+                            <button key={name} onClick={() => setTab(name)} className={tab === name ? 'active' : ''}>
+                                <Icon size={15} />
+                                <span>{name}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {notice && (
+                        <div className='notice'>
+                            <Sparkles size={15} />
+                            {notice}
+                        </div>
+                    )}
+
+                    {tab === 'Overview' && (
+                        <div className='workspace-panel'>
+                            <div className='panel-grid'>
+                                <Panel title='Machine-first, human-verified' kicker='CONTROL'>
+                                    <p>
+                                        AI extracts clinical elements, dates, seriousness and
+                                        dechallenge/rechallenge candidates. A pharmacovigilance professional
+                                        makes the final decision.
+                                    </p>
+                                    <div className='flow'>
+                                        <span>Narrative</span><b>→</b><span>AI extraction</span><b>→</b>
+                                        <span>PV review</span><b>→</b><span>Regulatory action</span>
+                                    </div>
+                                </Panel>
+                                <Panel title='Regulatory readiness' kicker='READINESS'>
+                                    <Readiness label='E2B(R3) XML workflow' state='READY' />
+                                    <Readiness label='EMA production gateway' state='GATED' />
+                                    <Readiness label='Signal management' state='READY' />
+                                    <Readiness label='PSUR/PBRER draft engine' state='READY' />
+                                    <Readiness label='AI governance evidence' state='READY' />
+                                </Panel>
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'ICSR / E2B' && (
+                        <WorkspaceView
+                            title='ICSR & E2B(R3)'
+                            subtitle='Structured case processing with a hard human approval gate.'
+                            action={
+                                <button className='btn btn-gold btn-small' onClick={e2b} disabled={busy}>
+                                    <Send size={14} /> Generate E2B(R3)
+                                </button>
+                            }
+                        >
+                            <div className='case-list'>
+                                {cases.map((item) => (
+                                    <div className='case-row' key={item.id}>
+                                        <div>
+                                            <b>{item.id}</b>
+                                            <span>{item.drug} · {item.reaction} · {item.seriousness}</span>
+                                        </div>
+                                        <div className='case-ai'><Brain size={13} /> {item.aiConfidence}% AI confidence</div>
+                                        <div className={item.humanVerified ? 'verified' : 'pending'}>
+                                            {item.humanVerified ? 'HUMAN VERIFIED' : 'AWAITING HUMAN'}
+                                        </div>
+                                        {!item.humanVerified && (
+                                            <button className='micro-btn' onClick={() => verifyCase(item.id)}>
+                                                <CheckCircle2 size={12} /> Verify
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className='xml-card'>
+                                <FileCheck2 />
+                                <div>
+                                    <b>ISO/ICH E2B(R3) validation package</b>
+                                    <p>
+                                        Generates a standards-oriented XML package and validation report. Production
+                                        transmission stays registration-gated.
+                                    </p>
+                                </div>
+                            </div>
+                        </WorkspaceView>
+                    )}
+
+                    {tab === 'Signals' && (
+                        <WorkspaceView
+                            title='Signal management'
+                            subtitle='Disproportionality analytics with reviewable evidence.'
+                            action={
+                                <button className='btn btn-gold btn-small' onClick={runSignal} disabled={busy}>
+                                    <Zap size={14} /> Recalculate
+                                </button>
+                            }
+                        >
+                            <div className='signal-grid'>
+                                {(signals.length
+                                    ? signals
+                                    : [{
+                                        title: 'Cardiac dysfunction / trastuzumab',
+                                        severity: 'HIGH',
+                                        source: 'ICSR workspace',
+                                        country: 'EU',
+                                        impact: 'Review for potential signal',
+                                        prr: 4.21,
+                                        ror: 4.08,
+                                        trend: 'RISING',
+                                        created_at: Date.now(),
+                                    }]).map((item, index) => (
+                                        <div className='signal' key={item.id || index}>
+                                            <div className='signal-top'>
+                                                <span className={'sev ' + item.severity.toLowerCase()}>{item.severity}</span>
+                                                <b>{item.title}</b>
+                                            </div>
+                                            <div className='signal-stats'>
+                                                <span>PRR <strong>{item.prr.toFixed(2)}</strong></span>
+                                                <span>ROR <strong>{item.ror.toFixed(2)}</strong></span>
+                                                <span>TREND <strong>{item.trend}</strong></span>
+                                            </div>
+                                            <small>{item.country} · {item.source} · {item.impact}</small>
+                                        </div>
+                                    ))}
+                            </div>
+                        </WorkspaceView>
+                    )}
+
+                    {tab === 'Reports' && (
+                        <WorkspaceView
+                            title='PSUR / PBRER workspace'
+                            subtitle='Generate a structured working draft, then route it through regulatory review.'
+                            action={
+                                <button className='btn btn-gold btn-small' onClick={generateReport} disabled={busy}>
+                                    <FileText size={14} /> Generate draft
+                                </button>
+                            }
+                        >
+                            <div className='report-grid'>
+                                <Report title='PSUR' desc='Periodic safety update structure with benefit-risk narrative, signal overview and ICSR evidence.' />
+                                <Report title='PBRER' desc='Benefit-risk evaluation structure with cumulative safety data and action tracking.' />
+                            </div>
+                            <div className='review-banner'>
+                                <ClipboardCheck />
+                                <div>
+                                    <b>Human sign-off required</b>
+                                    <p>Generated text is a working draft, not a submitted regulatory report.</p>
+                                </div>
+                            </div>
+                        </WorkspaceView>
+                    )}
+
+                    {tab === 'AI Governance' && (
+                        <WorkspaceView title='Trustworthy AI control room' subtitle='Evidence for human oversight, transparency, validation and accountability.'>
+                            <div className='govern-grid'>
+                                <Readiness label='Human oversight' state='ENABLED' />
+                                <Readiness label='Model output provenance' state='TRACKED' />
+                                <Readiness label='Decision audit trail' state='APPEND-ONLY' />
+                                <Readiness label='Risk & limitation disclosure' state='ACTIVE' />
+                                <Readiness label='EU AI Act evidence pack' state='WORKSPACE' />
+                                <Readiness label='Data residency policy' state='EU REGION' />
+                            </div>
+                            <p className='muted'>
+                                The system supports governance evidence. It does not self-certify legal compliance
+                                or replace qualified regulatory, privacy or AI compliance assessment.
+                            </p>
+                        </WorkspaceView>
+                    )}
+
+                    {tab === 'Sources' && (
+                        <WorkspaceView
+                            title='Official source control plane'
+                            subtitle='Source-backed status, not decorative “LIVE” labels.'
+                            action={
+                                <button className='btn btn-ghost btn-small' onClick={refresh} disabled={busy}>
+                                    <RefreshCw size={14} /> Refresh
+                                </button>
+                            }
+                        >
+                            <div className='source-list'>
+                                {sources.map((item) => (
+                                    <div className='source' key={item.id}>
+                                        <div>
+                                            <b>{item.name}</b>
+                                            <span>{item.region} · {item.message}</span>
+                                        </div>
+                                        <div className={'source-status ' + item.status.toLowerCase()}>{item.status}</div>
+                                        <a href={item.url} target='_blank' rel='noreferrer'>Official source</a>
+                                    </div>
+                                ))}
+                            </div>
+                        </WorkspaceView>
+                    )}
+
+                    {tab === 'Audit Trail' && (
+                        <WorkspaceView title='Append-only audit trail' subtitle='Every AI, human and regulatory workflow action leaves evidence.'>
+                            <div className='audit-list'>
+                                {(audits.length
+                                    ? audits
+                                    : [{
+                                        actor: 'system',
+                                        action: 'workspace_initialized',
+                                        entity: 'pharma-dashboard',
+                                        timestamp: Date.now(),
+                                        hash: 'demo-evidence',
+                                    }]).slice(0, 20).map((item, index) => (
+                                    <div className='audit' key={item.id || index}>
+                                        <History size={14} />
+                                        <div>
+                                            <b>{item.action}</b>
+                                            <span>{item.actor} · {item.entity}</span>
+                                        </div>
+                                        <code>{item.hash}</code>
+                                    </div>
+                                ))}
+                            </div>
+                        </WorkspaceView>
+                    )}
+                </section>
+
+
 {tab === 'FDA Approvals' && (
   <WorkspaceView
     title='FDA Drug Approvals'
@@ -731,121 +751,127 @@ import { useEffect, useRef, useState } from 'react';
             </tr>
           </thead>
           <tbody>
-            {approvals.map((approval, idx) => (
-              const approvalDate = approval.approval_date?.substring(0, 4) + '-' + approval.approval_date?.substring(4, 6) + '-' + approval.approval_date?.substring(6, 8) || '';
-              const isNew = approvalDate && new Date(approvalDate) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-              return (<tr key={approval.id}>
+            {approvals.map((approval, idx) => {
+              const raw = approval.approval_date ?? '';
+              const approvalDate = raw.length === 8
+                ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+                : raw;
+              const isNew = Boolean(approvalDate) &&
+                new Date(approvalDate).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000;
+              return (<tr key={approval.id ?? idx}>
                 <td>{approval.drug_name}</td>
                 <td>{approvalDate}</td>
                 <td>{approval.indication}</td>
                 <td>
-                  {isNew && (<span className='badge badge-new'>New</span>)};
-                  {!isNew && (<span className='badge badge-old'>Existing</span>)};
+                  {isNew
+                    ? <span className='badge badge-new'>New</span>
+                    : <span className='badge badge-old'>Existing</span>}
                 </td>
-              </tr>
-            ))}
+              </tr>);
+            })}
           </tbody>
         </table>
       </div>
-    )}
+    </>)}
   </WorkspaceView>
-)\n                <footer className='footer'>
-\n                    <div>
-\n                        <b>We Do Care Global</b>
-\n                        <span>Pharmacovigilance &amp; Regulatory Intelligence OS</span>
-\n                    </div>
-\n                    <div className='footer-links'>
-\n                        <button onClick={() => scrollTo('about')}>About</button>
-\n                        <button onClick={() => scrollTo('contact')}>Contact</button>
-\n                        <a href='https://github.com/we-do-care-global' target='_blank' rel='noreferrer'>GitHub</a>
-\n                        <a href='https://orcid.org/0009-0009-8515-2727' target='_blank' rel='noreferrer'>ORCID</a>
-\n                    </div>
-\n                    <div className='footer-note'>© 2026 We Do Care Global · Apache 2.0 · EU governance workspace</div>
-\n                </footer>
-\n            </main>
-\n        </div>
-\n    );
-\n}
-\n
-\nfunction FeatureCard({
-\n    icon,
-\n    tone,
-\n    title,
-\n    text,
-\n    onLearn,
-\n}: {
-\n    icon: React.ReactNode;
-\n    tone: string;
-\n    title: string;
-\n    text: string;
-\n    onLearn: () => void;
-\n}) {
-\n    return (
-\n        <article className={'feature-card ' + tone}>
-\n            <div className='feature-icon'>{icon}</div>
-\n            <h3>{title}</h3>
-\n            <p>{text}</p>
-\n            <button onClick={onLearn}>Learn more <ArrowUpRight size={13} /></button>
-\n        </article>
-\n    );
-\n}
-\n
-\nfunction Panel({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) {
-\n    return (
-\n        <div className='panel'>
-\n            <span className='section-kicker'>{kicker}</span>
-\n            <h3>{title}</h3>
-\n            {children}
-\n        </div>
-\n    );
-\n}
-\n
-\nfunction WorkspaceView({
-\n    title,
-\n    subtitle,
-\n    action,
-\n    children,
-\n}: {
-\n    title: string;
-\n    subtitle: string;
-\n    action?: React.ReactNode;
-\n    children: React.ReactNode;
-\n}) {
-\n    return (
-\n        <div className='workspace-view'>
-\n            <div className='workspace-head'>
-\n                <div>
-\n                    <span className='section-kicker'>WE DO CARE GLOBAL</span>
-\n                    <h3>{title}</h3>
-\n                    <p>{subtitle}</p>
-\n                </div>
-\n                {action}
-\n            </div>
-\n            {children}
-\n        </div>
-\n    );
-\n}
-\n
-\nfunction Readiness({ label, state }: { label: string; state: string }) {
-\n    return (
-\n        <div className='readiness'>
-\n            <span>{label}</span>
-\n            <b>{state}</b>
-\n        </div>
-\n    );
-\n}
-\n
-\nfunction Report({ title, desc }: { title: string; desc: string }) {
-\n    return (
-\n        <div className='report'>
-\n            <FileText size={18} />
-\n            <div>
-\n                <b>{title}</b>
-\n                <p>{desc}</p>
-\n                <span>WORKING DRAFT · HUMAN REVIEW</span>
-\n            </div>
-\n        </div>
-\n    );
-\n}
-\n
-\nexport default App;
+)}
+                <footer className='footer'>
+                    <div>
+                        <b>We Do Care Global</b>
+                        <span>Pharmacovigilance &amp; Regulatory Intelligence OS</span>
+                    </div>
+                    <div className='footer-links'>
+                        <button onClick={() => scrollTo('about')}>About</button>
+                        <button onClick={() => scrollTo('contact')}>Contact</button>
+                        <a href='https://github.com/we-do-care-global' target='_blank' rel='noreferrer'>GitHub</a>
+                        <a href='https://orcid.org/0009-0009-8515-2727' target='_blank' rel='noreferrer'>ORCID</a>
+                    </div>
+                    <div className='footer-note'>© 2026 We Do Care Global · Apache 2.0 · EU governance workspace</div>
+                </footer>
+            </main>
+        </div>
+    );
+}
+
+function FeatureCard({
+    icon,
+    tone,
+    title,
+    text,
+    onLearn,
+}: {
+    icon: React.ReactNode;
+    tone: string;
+    title: string;
+    text: string;
+    onLearn: () => void;
+}) {
+    return (
+        <article className={'feature-card ' + tone}>
+            <div className='feature-icon'>{icon}</div>
+            <h3>{title}</h3>
+            <p>{text}</p>
+            <button onClick={onLearn}>Learn more <ArrowUpRight size={13} /></button>
+        </article>
+    );
+}
+
+function Panel({ title, kicker, children }: { title: string; kicker: string; children: React.ReactNode }) {
+    return (
+        <div className='panel'>
+            <span className='section-kicker'>{kicker}</span>
+            <h3>{title}</h3>
+            {children}
+        </div>
+    );
+}
+
+function WorkspaceView({
+    title,
+    subtitle,
+    action,
+    children,
+}: {
+    title: string;
+    subtitle: string;
+    action?: React.ReactNode;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className='workspace-view'>
+            <div className='workspace-head'>
+                <div>
+                    <span className='section-kicker'>WE DO CARE GLOBAL</span>
+                    <h3>{title}</h3>
+                    <p>{subtitle}</p>
+                </div>
+                {action}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function Readiness({ label, state }: { label: string; state: string }) {
+    return (
+        <div className='readiness'>
+            <span>{label}</span>
+            <b>{state}</b>
+        </div>
+    );
+}
+
+function Report({ title, desc }: { title: string; desc: string }) {
+    return (
+        <div className='report'>
+            <FileText size={18} />
+            <div>
+                <b>{title}</b>
+                <p>{desc}</p>
+                <span>WORKING DRAFT · HUMAN REVIEW</span>
+            </div>
+        </div>
+    );
+}
+
+export default App;

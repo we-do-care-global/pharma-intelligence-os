@@ -68,3 +68,15 @@ docker-compose.override.yml
 
 # Local config
 policy.yaml
+
+# Node
+node_modules/
+*.tsbuildinfo
+
+# Local build / verification logs (never commit these)
+*.log
+npm-debug.log*
+
+
+# Stray artefacts from local tooling
+os.devnull

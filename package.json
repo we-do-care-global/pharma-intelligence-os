@@ -1,13 +1,36 @@
 {
     "name": "pharma-intelligence-os",
-    "version": "0.0.1",
+    "version": "0.1.0",
     "type": "module",
+    "description": "Pharmacovigilance and regulatory intelligence workspace: ICSR review, E2B(R3) packages, signal management, PSUR/PBRER drafts and FDA approval tracking.",
+    "license": "Apache-2.0",
+    "author": "Emir Perla",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/we-do-care-global/pharma-intelligence-os"
+    },
+    "homepage": "https://we-do-care-global.github.io/pharma-intelligence-os/",
+    "bugs": {
+        "url": "https://github.com/we-do-care-global/pharma-intelligence-os/issues"
+    },
+    "keywords": [
+        "pharmacovigilance",
+        "icsr",
+        "e2b",
+        "signal-management",
+        "regulatory-intelligence",
+        "react",
+        "typescript"
+    ],
     "scripts": {
         "dev": "vite",
         "build": "vite build",
         "preview": "vite preview",
-        "lint": "eslint src --ext .ts,.tsx",
-        "test": "vitest"
+        "lint": "eslint src tests --ext .ts,.tsx",
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
     },
     "dependencies": {
         "lucide-react": "^0.469.0",
