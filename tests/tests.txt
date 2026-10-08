@@ -1,0 +1,53 @@
+# Tests
+
+## Test 1 - Explore the branded pharmacovigilance workspace [sanity]
+Viewport: desktop
+Covers: branded hero, banner CTA, feature navigation, live workspace, /api/dashboard
+Description: Verifies the new We Do Care Global landing surface leads into the operational workspace while loading source-backed dashboard state.
+Steps:
+1. Open the application and review the We Do Care Global hero
+2. Review the highlighted gradient banner and feature cards
+3. Click Explore Platform
+4. Review the Live Workspace tabs and source status
+Expected: The branded hero, banner, feature cards and operational workspace are visible, and the dashboard loads without a frontend error.
+
+## Test 2 - Run the governed ICSR workflow
+Viewport: desktop
+Covers: ICSR / E2B navigation, human verification, E2B(R3) package generation, audit trail
+Description: Verifies the main safety-case workflow remains available after the public-facing redesign.
+Steps:
+1. Open the Live Workspace and choose ICSR / E2B
+2. Verify an unverified ICSR case
+3. Generate an E2B(R3) package
+4. Open Audit Trail
+Expected: The case becomes HUMAN VERIFIED, an E2B(R3) package is generated with production transmission explicitly gated, and an audit event is visible.
+
+## Test 3 - Calculate and inspect signals
+Viewport: desktop
+Covers: signal management, PRR, ROR, trend indicators, /api/signals/analyze
+Description: Verifies the signal-management action still works from the redesigned workspace.
+Steps:
+1. Choose Signals
+2. Click Recalculate
+3. Review the signal cards
+Expected: Signal cards show severity, PRR, ROR and TREND values with source context.
+
+## Test 4 - Generate a PSUR/PBRER draft
+Viewport: desktop
+Covers: Reports navigation, PSUR/PBRER generation, human review gate, /api/reports/psur
+Description: Verifies the report workspace remains usable and makes human sign-off explicit.
+Steps:
+1. Choose Reports
+2. Click Generate draft
+3. Review PSUR and PBRER working-draft cards
+Expected: A working draft is generated for human regulatory review and the page does not claim the report was submitted.
+
+## Test 5 - Verify responsive branded navigation and governance
+Viewport: mobile
+Covers: mobile layout, About section, Enterprise Hybrid RAG link, Agent Eval link, AgentGuard link, Sources, AI Governance, realtime subscription
+Description: Verifies the mobile experience exposes the new branded ecosystem links and governance controls without horizontal overflow.
+Steps:
+1. Open the page on mobile and switch between About and Live Workspace
+2. Open the Enterprise Hybrid RAG, Agent Eval and AgentGuard links
+3. Review Sources and AI Governance
+Expected: The page remains readable and interactive on mobile, ecosystem links open correctly, and governance/source controls remain available.

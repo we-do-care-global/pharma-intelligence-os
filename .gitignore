@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# TypeScript / tooling caches
+*.tsbuildinfo
+.vite/
+.eslintcache
+
+# Test / coverage output
+coverage/
+*.lcov
+
+# Local verification logs (never commit these)
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Stray artefacts from local tooling
+os.devnull
+
+# NOTE: docs/ is intentionally NOT ignored — it is the GitHub Pages
+# publishing root for this repo (Pages source: main:/docs, legacy build).
+# The previous Python-template .gitignore had a bare `lib/` rule that silently
+# excluded src/lib/appdeploy-client.ts, which broke the CI build.
