@@ -24,8 +24,8 @@ FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18
 WORKDIR /app
 
 # Create non-root user
-RUN addgroup -g 1000 -S appgroup && \
-    adduser -u 1000 -S appuser -G appgroup
+RUN addgroup -g 1001 appgroup && \
+    adduser -u 1001 -G appgroup -s /bin/sh -D appuser
 
 # Install serve for static file serving
 RUN npm install -g serve@14.2.0
