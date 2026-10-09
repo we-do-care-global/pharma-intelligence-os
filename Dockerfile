@@ -2,7 +2,7 @@
 # Multi-stage build for smaller production image
 
 # Stage 1: Build
-FROM node:22-alpine@sha256:42651b9b13395c71e56c4c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5 AS builder
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS builder
 
 WORKDIR /app
 
@@ -19,13 +19,13 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Production
-FROM node:22-alpine@sha256:42651b9b13395c71e56c4c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5 AS production
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS production
 
 WORKDIR /app
 
 # Create non-root user
-RUN addgroup -g 1000 -S appgroup && \
-    adduser -u 1000 -S appuser -G appgroup
+RUN addgroup -g 1001 appgroup && \
+    adduser -u 1001 -G appgroup -s /bin/sh -D appuser
 
 # Install serve for static file serving
 RUN npm install -g serve@14.2.0
